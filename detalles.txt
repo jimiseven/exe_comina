@@ -1,0 +1,135 @@
+# ROL Y CONTEXTO DEL SISTEMA
+Actúa como un Desarrollador Full-Stack Senior, experto en la creación de aplicaciones de escritorio seguras utilizando Tauri (Rust), React.js (Vite), Tailwind CSS y SQLite.
+
+**Objetivo:** Desarrollar el sistema "ProyJimP", un ERP administrativo local (offline) para Windows enfocado en el sector minero. El sistema debe ser extremadamente rápido, garantizar cero pérdida de datos (transaccional y con respaldos) y su código frontend debe estar preparado para una futura migración a entorno web.
+
+# STACK TECNOLÓGICO Y DEPENDENCIAS EXACTAS
+- **Empaquetador/Backend:** Tauri 2.0 (Rust).
+- **Frontend:** React 18 (inicializado con Vite) + TypeScript.
+- **Estilos:** Tailwind CSS (diseño limpio, corporativo, basado en paneles).
+- **Base de Datos:** SQLite embebido.
+- **Crates (Rust) requeridos:** `rusqlite` (o `sqlx`), `serde`, `serde_json`, `tauri-plugin-sql` (si prefieres manejar DB desde el front, aunque es mejor la lógica en Rust para mayor control de archivos locales).
+
+# DISEÑO DE INTERFAZ (UI/UX - Basado en Mockups)
+El Layout principal (App.tsx) debe tener:
+1. **Sidebar Izquierdo (Fijo):** Menú con las opciones: RRHH, Nómina, Almacén, Seguridad, BD - Respaldo, y botón de "Cerrar Sesión" en la parte inferior.
+2. **Panel Central (Dinámico):** Donde se renderizan las vistas de cada módulo. Debe incluir tablas de datos con barras de búsqueda y botones de acción primarios (ej. "Registrar nuevo empleado", "Registrar nuevo ingreso").
+3. **Formularios:** Divididos en tarjetas o secciones visuales claras (ej. Datos Personales, Datos Laborales, etc.).
+
+# ESQUEMA RELACIONAL DE BASE DE DATOS (SQLITE)
+La base de datos debe configurarse en modo WAL (`PRAGMA journal_mode=WAL;`) para alta concurrencia y seguridad frente a cortes de energía. A continuación, el script DDL exacto requerido:
+
+## 1. Módulo RRHH (Tabla: empleados)
+Contiene la información de la "Planilla de Registro de Personal".
+```sql
+CREATE TABLE IF NOT EXISTS empleados (
+    id_legajo INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha_registro DATE DEFAULT CURRENT_DATE,
+    apellidos_nombres TEXT NOT NULL,
+    tipo_documento TEXT,
+    nro_documento TEXT NOT NULL UNIQUE,
+    fecha_nacimiento DATE,
+    nacionalidad TEXT,
+    estado_civil TEXT,
+    sexo TEXT,
+    direccion_domiciliaria TEXT,
+    ciudad TEXT,
+    codigo_postal TEXT,
+    telefono TEXT,
+    correo_electronico TEXT,
+    cargo_puesto TEXT NOT NULL,
+    departamento_area TEXT,
+    fecha_ingreso DATE NOT NULL,
+    tipo_contrato TEXT,
+    jornada_laboral TEXT,
+    horario_trabajo TEXT,
+    salario_remuneracion REAL NOT NULL DEFAULT 0.0,
+    supervisor_inmediato TEXT,
+    lugar_trabajo TEXT,
+    modalidad TEXT,
+    emergencia_nombre TEXT,
+    emergencia_parentesco TEXT,
+    emergencia_telefono TEXT,
+    emergencia_direccion TEXT,
+    nivel_estudios TEXT,
+    profesion_titulo TEXT,
+    nro_seguro_social TEXT,
+    grupo_sanguineo TEXT,
+    observaciones TEXT,
+    estado_activo INTEGER DEFAULT 1 -- 1: Activo, 0: Inactivo (Baja lógica)
+);
+```
+
+## 2. Módulo Nómina (Tabla: nomina_pagos y nomina_conceptos)
+Permite el desglose detallado de descuentos y adelantos.
+```sql
+CREATE TABLE IF NOT EXISTS nomina_pagos (
+    id_pago INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_empleado INTEGER NOT NULL,
+    mes TEXT NOT NULL,
+    anio INTEGER NOT NULL,
+    monto_total REAL NOT NULL,
+    estado_bloqueo INTEGER DEFAULT 0, -- 1: Bloqueado/Pagado, 0: Editable
+    FOREIGN KEY (id_empleado) REFERENCES empleados(id_legajo)
+);
+
+CREATE TABLE IF NOT EXISTS nomina_conceptos (
+    id_concepto INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_pago INTEGER NOT NULL,
+    tipo_concepto TEXT NOT NULL, -- 'SALARIO_BASE', 'DESCUENTO', 'ADELANTO'
+    monto REAL NOT NULL,
+    descripcion_info TEXT, -- Ej: "Reposición casco", "Adelanto 29 julio"
+    fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_pago) REFERENCES nomina_pagos(id_pago)
+);
+```
+
+## 3. Módulo Almacén (Tabla: almacen_items y almacen_movimientos)
+Digitaliza el control de inventario Kardex minero.
+```sql
+CREATE TABLE IF NOT EXISTS almacen_items (
+    id_item INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo_item TEXT UNIQUE,
+    descripcion TEXT NOT NULL,
+    tipo_categoria TEXT, -- ej. 'Material de uso', 'Material de oficina'
+    unidad_medida TEXT NOT NULL, -- ej. 'kilo', 'paquete', 'unidad'
+    ubicacion_rack TEXT,
+    stock_minimo REAL DEFAULT 0.0,
+    stock_maximo REAL DEFAULT 0.0,
+    stock_actual REAL DEFAULT 0.0,
+    costo_unitario_promedio REAL DEFAULT 0.0
+);
+
+CREATE TABLE IF NOT EXISTS almacen_movimientos (
+    id_movimiento INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_item INTEGER NOT NULL,
+    tipo_movimiento TEXT NOT NULL, -- 'INGRESO', 'EGRESO', 'DEVOLUCION'
+    fecha_movimiento DATETIME DEFAULT CURRENT_TIMESTAMP,
+    nro_documento_ref TEXT, -- Guía, factura o solicitud
+    entidad_origen_destino TEXT, -- Proveedor (Ingreso) o Frente/Destino (Egreso)
+    cantidad REAL NOT NULL,
+    costo_total_movimiento REAL,
+    id_empleado_involucrado INTEGER, -- Quién recibe/entrega
+    observaciones TEXT,
+    FOREIGN KEY (id_item) REFERENCES almacen_items(id_item),
+    FOREIGN KEY (id_empleado_involucrado) REFERENCES empleados(id_legajo)
+);
+```
+
+## 4. Módulo Seguridad (Tabla: auditoria_logs)
+```sql
+CREATE TABLE IF NOT EXISTS auditoria_logs (
+    id_log INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha_hora DATETIME DEFAULT CURRENT_TIMESTAMP,
+    usuario TEXT DEFAULT 'Administrador',
+    modulo TEXT NOT NULL,
+    accion TEXT NOT NULL, -- 'INSERT', 'UPDATE', 'DELETE', 'BACKUP'
+    detalles TEXT
+);
+```
+
+# INSTRUCCIONES DE EJECUCIÓN PASO A PASO PARA LA IA (Output esperado):
+No me des explicaciones largas. Proporciona directamente lo siguiente:
+1. **Paso 1 (Terminal):** Los comandos exactos para inicializar el proyecto Tauri con Vite (React/TypeScript).
+2. **Paso 2 (Rust - Backend):** El código completo de `src-tauri/src/main.rs` (y módulos si es necesario) que configure la conexión a SQLite en un archivo local (`datos_sistema.db`), aplique el PRAGMA WAL, y cree todas las tablas mencionadas usando `rusqlite`.
+3. **Paso 3 (React - Frontend):** El código del layout base `App.tsx` implementando el Sidebar izquierdo y el enrutador básico para los 4 módulos usando Tailwind CSS.
